@@ -1,7 +1,13 @@
-const fs = require('fs');
-const path = require('path');
-const axios = require('axios');
+import fs from 'fs';
+import path from 'path';
+import axios from 'axios';
+import { fileURLToPath } from 'url';
+import chalk from 'chalk';
+import inquirer from 'inquirer';
 
+// Tự định nghĩa __dirname
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 class AccountManager {
     constructor() {
@@ -120,11 +126,15 @@ class AccountManager {
         // loop for all account
         this.accounts.forEach(([userName,passWord]) => {
             console.log(`Username: ${userName}, Pass: ${passWord}`);
+            userLogin(userName,passWord);
+            connect
         });
         
     }
 
 }
+console.log(`alo alo ${path.join(__dirname, 'account.txt')}`);
+
 (async () => {
     const manager = new AccountManager();
     try {
