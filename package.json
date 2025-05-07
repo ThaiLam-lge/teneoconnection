@@ -1,0 +1,11 @@
+{
+  "name": "teneoconnection",
+  "version": "1.0.0",
+  "description": "Auto connect wallet, x, and discord",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "thai.lam",
+  "license": "ISC"
+}
