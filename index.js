@@ -126,14 +126,64 @@ class AccountManager {
         // loop for all account
         this.accounts.forEach(([userName,passWord]) => {
             console.log(`Username: ${userName}, Pass: ${passWord}`);
-            userLogin(userName,passWord);
-            connect
+            this.processWithSelenium(userName,passWord);
         });
         
     }
 
+    processWithSelenium(userName,passWord){
+        const token = this.getAccesstocken(userName,passWord)
+        if(!token) {
+            console.warn(chalk.yellow(`can't sign with username = ${userName} and password = ${passWord}`))
+        }
+        const webdriver = this.initWebdriver(token)
+        this.linkWallet(webdriver)
+        this.linkwithX(webdriver)
+        this.connect2Discord(webdriver)
+        this.joinProjectTelegram(webdriver)
+    }
+
+    getAccesstocken(userName, passWord) {
+        console.log(`🔍 [getAccesstocken] Attempting to get access token for username: ${userName}`);
+        // Simulate token logic
+        const token = `mockTokenFor_${userName}`;
+        console.log(`✅ [getAccesstocken] Token generated: ${token}`);
+        return token;
+    }
+    
+    initWebdriver(token) {
+        console.log(`🔍 [initWebdriver] Initializing webdriver with token: ${token}`);
+        // Simulate webdriver initialization
+        const webdriver = { token };
+        console.log(`✅ [initWebdriver] Webdriver initialized.`);
+        return webdriver;
+    }
+    
+    linkWallet(webdriver) {
+        console.log(`🔍 [linkWallet] Linking with smart wallet using webdriver: ${JSON.stringify(webdriver)}`);
+        // Simulate linking with X logic
+        console.log(`✅ [linkWallet] Linked with smart wallet successfully.`);
+    }
+
+    linkwithX(webdriver) {
+        console.log(`🔍 [linkwithX] Linking with X using webdriver: ${JSON.stringify(webdriver)}`);
+        // Simulate linking with X logic
+        console.log(`✅ [linkwithX] Linked with X successfully.`);
+    }
+    
+    connect2Discord(webdriver) {
+        console.log(`🔍 [connect2Discord] Connecting to Discord using webdriver: ${JSON.stringify(webdriver)}`);
+        // Simulate Discord connection logic
+        console.log(`✅ [connect2Discord] Connected to Discord successfully.`);
+    }
+
+    joinProjectTelegram(webdriver) {
+        console.log(`🔍 [joinProjectTelegram] join Project Telegram using webdriver: ${JSON.stringify(webdriver)}`);
+        // Simulate Discord connection logic
+        console.log(`✅ [joinProjectTelegram] Connected to Discord successfully.`);
+    }
+
 }
-console.log(`alo alo ${path.join(__dirname, 'account.txt')}`);
 
 (async () => {
     const manager = new AccountManager();
