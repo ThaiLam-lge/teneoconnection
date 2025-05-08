@@ -122,35 +122,71 @@ class AccountManager {
                 process.exit(0);
             }
         }
-        
+
         // loop for all account
-        this.accounts.forEach(([userName,passWord]) => {
+        for(const [userName,passWord] of this.accounts) {
             console.log(`Username: ${userName}, Pass: ${passWord}`);
-            this.processWithSelenium(userName,passWord);
-        });
-        
+            await this.processWithSelenium(userName,passWord);
+        };
+
     }
 
-    processWithSelenium(userName,passWord){
-        const token = this.getAccesstocken(userName,passWord)
+    async processWithSelenium(userName,passWord){
+        const token = await this.getAccessToken(userName,passWord);
         if(!token) {
             console.warn(chalk.yellow(`can't sign with username = ${userName} and password = ${passWord}`))
+            return;
         }
-        const webdriver = this.initWebdriver(token)
-        this.linkWallet(webdriver)
-        this.linkwithX(webdriver)
-        this.connect2Discord(webdriver)
-        this.joinProjectTelegram(webdriver)
+        const webdriver = this.initWebdriver(token);
+        this.linkWallet(webdriver);
+        this.linkwithX(webdriver);
+        this.connect2Discord(webdriver);
+        this.joinProjectTelegram(webdriver);
     }
 
-    getAccesstocken(userName, passWord) {
-        console.log(`🔍 [getAccesstocken] Attempting to get access token for username: ${userName}`);
-        // Simulate token logic
-        const token = `mockTokenFor_${userName}`;
-        console.log(`✅ [getAccesstocken] Token generated: ${token}`);
-        return token;
+    parseProxy(proxy) {
+        if (!proxy) return null;
+        const parsed = new URL(proxy);
+        return {
+            protocol: parsed.protocol.replace(':', ''),
+            host: parsed.hostname,
+            port: parseInt(parsed.port, 10),
+        };
     }
-    
+
+    async getAccessToken(userName, passWord) {
+        const url = 'https://auth.teneo.pro/api/login';
+        const headers = {
+            'Content-Type': 'application/json',
+            'Origin': 'https://dashboard.teneo.pro',
+            'Referer': 'https://dashboard.teneo.pro/',
+            'x-api-key': 'OwAG3kib1ivOJG4Y0OCZ8lJETa6ypvsDtGmdhcjB',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36',
+        };
+        
+        
+        console.log("Sending request with:", { userName, passWord });
+        try {
+            const response = await axios.post(url, { "email":userName, "password":passWord }, {
+                headers,
+                timeout: 30000
+            });
+
+            console.log("Response:", response.data);
+            if (response.status === 200) {
+                const { user, access_token } = response.data;
+                console.log(chalk.green(`✅ Account ${userName} with userID = ${user.id} authenticated`));
+                console.log(`✅ [getAccesstocken] Token generated: ${access_token}`);
+                return access_token;
+            } else {
+                throw new Error(`Authentication failed: ${response.statusText}`);
+            }
+        } catch (error) {
+            console.error(chalk.red(`❌ Account ${userName} failed: ${error.message}`));
+            return null;
+        }
+    }
+
     initWebdriver(token) {
         console.log(`🔍 [initWebdriver] Initializing webdriver with token: ${token}`);
         // Simulate webdriver initialization
@@ -158,7 +194,7 @@ class AccountManager {
         console.log(`✅ [initWebdriver] Webdriver initialized.`);
         return webdriver;
     }
-    
+
     linkWallet(webdriver) {
         console.log(`🔍 [linkWallet] Linking with smart wallet using webdriver: ${JSON.stringify(webdriver)}`);
         // Simulate linking with X logic
@@ -170,7 +206,7 @@ class AccountManager {
         // Simulate linking with X logic
         console.log(`✅ [linkwithX] Linked with X successfully.`);
     }
-    
+
     connect2Discord(webdriver) {
         console.log(`🔍 [connect2Discord] Connecting to Discord using webdriver: ${JSON.stringify(webdriver)}`);
         // Simulate Discord connection logic
