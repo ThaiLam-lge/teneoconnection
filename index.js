@@ -6,14 +6,42 @@ import chalk from 'chalk';
 import inquirer from 'inquirer';
 import Chrome from 'selenium-webdriver/chrome.js'
 import { Browser, Builder, until, By } from 'selenium-webdriver';
-import { Key, keyboard } from '@nut-tree-fork/nut-js';
+import { Key, keyboard , screen,  imageResource, mouse, Point } from '@nut-tree-fork/nut-js';
 import clipboardy from 'clipboardy';
 import { dir } from 'console';
 
-// Tự định nghĩa __dirname
+screen.config.resourceDirectory = "./resources"; 
+screen.config.confidence = 0.8; 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const _openChromeCommand =  'chrome --profile-directory="Default" https://dashboard.teneo.pro/auth'
+const _openChromeCommand =  'chrome --profile-directory="Default" https://dashboard.teneo.pro/auth --new-window --start-maximized'
+
+async function leftClick(location, offsetX=0, offsetY=0) {
+    try{
+        await mouse.setPosition(new Point(location.x + offsetX, location.y + offsetY));
+        await mouse.leftClick();
+        await new Promise(resolve => setTimeout(resolve,100));
+    } catch (error)
+    {
+        console.log(chalk.red(`Error on leftClick: ${error}`));
+    }
+}
+
+async function findImagePos(image_path){
+    try {
+        const image = imageResource(image_path);
+        const pos = await screen.find(image);
+
+        // return center position
+        pos.left = pos.left + pos.width / 2;
+        pos.top = pos.top + pos.height / 2;
+        return pos;
+    } catch (error) {
+        console.log(chalk.red(`Error on findImagePos: ${error}`));
+        return null;
+    }
+    
+}
 
 async function pressAndRelease(...keys) {
     try {
@@ -37,10 +65,10 @@ function genLoginScript(username,password){
     let ret = "";
     ret += `const emailInput = document.querySelector('[name="email"]');`;
     ret += `emailInput.value = "${username}";`;
-    ret += `await emailInput.dispatchEvent(new Event('change'));`;
+    ret += `await emailInput.dispatchEvent(new Event('input',{ bubbles: true }));`;
     ret += `const password = document.querySelector('[name="password"]');`;
     ret += `password.value = "${password}";`;
-    ret += `await password.dispatchEvent(new Event('change'));`;
+    ret += `await password.dispatchEvent(new Event('input',{ bubbles: true }));`;
     ret += `await new Promise(resolve => setTimeout(resolve,10000));`
     ret +=`const buttons = document.querySelectorAll('button');`
     ret += `for (let button of buttons) {if (button.innerHTML.trim() === "Login") {button.click();break;};
@@ -175,6 +203,7 @@ class AccountManager {
         console.log(chalk.green(`Get access tocken for username = ${username}`));
         let token = null;
         // open Chrome by nut-js
+        await mouse.setPosition(new Point(0,0));
         await pressAndRelease(Key.LeftWin,Key.R);
         clipboardy.writeSync(_openChromeCommand);
         await pressAndRelease(Key.LeftControl,Key.V);
@@ -182,7 +211,11 @@ class AccountManager {
         await new Promise(resolve => setTimeout(resolve, 10000));
         await pressAndRelease(Key.LeftControl,Key.LeftShift,Key.I);
         await new Promise(resolve => setTimeout(resolve, 100));
-        await pressAndRelease(Key.Tab); 
+        let consolePos = await findImagePos("console.PNG");
+        if(consolePos!==null) {
+            await leftClick(consolePos);
+            await leftClick(consolePos,150,150);
+        }
         await keyboard.type(`allow pasting`);
         await pressAndRelease(Key.Enter);
         clipboardy.writeSync(genLoginScript(username,password));
