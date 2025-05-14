@@ -8,10 +8,49 @@ import Chrome from 'selenium-webdriver/chrome.js'
 import { Browser, Builder, until, By } from 'selenium-webdriver';
 import { Key, keyboard , screen,  imageResource, mouse, Point } from '@nut-tree-fork/nut-js';
 import clipboardy from 'clipboardy';
-import { dir } from 'console';
+import { dir, error } from 'console';
+import { windowManager } from 'node-window-manager';
+import { exec } from 'child_process';
+import { rejects } from 'assert';
+import { stderr, stdout } from 'process';
 
-screen.config.resourceDirectory = "./resources"; 
-screen.config.confidence = 0.8; 
+async function findImagePosition(imagePath) {
+    const absolutePath = path.resolve(imagePath);
+    const command = `python findScreenPos.py "${absolutePath}"`;
+    return new Promise((resolve,rejects) => {
+        exec(command, (error,stdout,stderr) => {
+            if (error) {
+                console.error(`Error on Python: ${error.message}`);
+                return rejects(error);
+              }
+
+              if (stderr) {
+                console.warn(`stderr: ${stderr}`);
+              }
+
+              const output = stdout.trim();
+              console.log(`Result from Python: ${output}`);
+
+              // Phân tích kết quả trả về
+              const result = output.split(';');
+              const found = result[0] === 'y';
+
+              if (found) {
+                const x = parseInt(result[1]);
+                const y = parseInt(result[2]);
+                const width = parseInt(result[3]);
+                const height = parseInt(result[4]);
+
+                resolve({ found, x, y, width, height });
+              } else {
+                resolve({ found: false, x: 0, y: 0, width: 0, height: 0 });
+              }
+            });
+        });
+}
+
+screen.config.resourceDirectory = "./resources";
+screen.config.confidence = 0.8;
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const _openChromeCommand =  'chrome --profile-directory="Default" https://dashboard.teneo.pro/auth --new-window --start-maximized'
@@ -24,6 +63,21 @@ async function leftClick(location, offsetX=0, offsetY=0) {
     } catch (error)
     {
         console.log(chalk.red(`Error on leftClick: ${error}`));
+    }
+}
+
+function moveWindowToTopLeft(titleKeyword) {
+    const windows = windowManager.getWindows();
+
+    for (const win of windows) {
+        const logFilePath = 'logs.txt'; // Đường dẫn file log
+        
+        // Lấy tiêu đề và ghi log vào file
+        const logMessage = win.getTitle().toLowerCase();
+        console.log(logMessage);
+        
+        // Ghi log vào file
+        fs.appendFileSync(logFilePath, logMessage + '\n', 'utf8');
     }
 }
 
@@ -40,7 +94,7 @@ async function findImagePos(image_path){
         console.log(chalk.red(`Error on findImagePos: ${error}`));
         return null;
     }
-    
+
 }
 
 async function pressAndRelease(...keys) {
@@ -55,7 +109,7 @@ async function pressAndRelease(...keys) {
 
         console.log(`Pressed and released keys: ${keys.join(", ")}`);
         await new Promise(resolve => setTimeout(resolve,100));
-        
+
     } catch (error) {
         console.error("Error pressing and releasing keys:", error);
     }
@@ -207,21 +261,30 @@ class AccountManager {
         await pressAndRelease(Key.LeftWin,Key.R);
         clipboardy.writeSync(_openChromeCommand);
         await pressAndRelease(Key.LeftControl,Key.V);
-        await pressAndRelease(Key.Enter); 
+        await pressAndRelease(Key.Enter);
+        await new Promise(resolve => setTimeout(resolve, 3000));
+        moveWindowToTopLeft("teneo dashboard");
+
         await new Promise(resolve => setTimeout(resolve, 10000));
         await pressAndRelease(Key.LeftControl,Key.LeftShift,Key.I);
-        await new Promise(resolve => setTimeout(resolve, 100));
-        let consolePos = await findImagePos("console.PNG");
-        if(consolePos!==null) {
-            await leftClick(consolePos);
-            await leftClick(consolePos,150,150);
+        const position = await findImagePosition('test_image.png');
+        if (position.found) {
+            console.log(`Ảnh tìm thấy tại (x=${position.x}, y=${position.y}), với kích thước (width=${position.width}, height=${position.height})`);
+        } else {
+            console.log('Không tìm thấy ảnh.');
         }
-        await keyboard.type(`allow pasting`);
-        await pressAndRelease(Key.Enter);
-        clipboardy.writeSync(genLoginScript(username,password));
-        await pressAndRelease()
-        await pressAndRelease(Key.LeftControl,Key.V);
-        await pressAndRelease(Key.Enter);
+        // await new Promise(resolve => setTimeout(resolve, 100));
+        // let consolePos = await findImagePos("console.PNG");
+        // if(consolePos!==null) {
+        //     await leftClick(consolePos);
+        //     await leftClick(consolePos,150,150);
+        // }
+        // await keyboard.type(`allow pasting`);
+        // await pressAndRelease(Key.Enter);
+        // clipboardy.writeSync(genLoginScript(username,password));
+        // await pressAndRelease()
+        // await pressAndRelease(Key.LeftControl,Key.V);
+        // await pressAndRelease(Key.Enter);
     }
     async processWithSelenium(userName,passWord){
         const webdriver = await this.initWebdriver(userName,passWord);
@@ -248,7 +311,7 @@ class AccountManager {
         try {
             const options = new Chrome.Options();
             const webdriver = new Builder().forBrowser(Browser.CHROME).setChromeOptions(options).build();
-    
+
             await webdriver.get('https://dashboard.teneo.pro/dashboard');
 
             // Waiting for input with attribute (name="email") and set value = userName
@@ -258,7 +321,7 @@ class AccountManager {
             );
             await emailInput.sendKeys(userName);
             console.log(`✅ [initWebdriver] Email input set to: ${userName}`);
-    
+
             // Waiting for input with attribute (name="password") and set value = passWord
             const passwordInput = await webdriver.wait(
                 until.elementLocated(By.name("password")),
@@ -266,7 +329,7 @@ class AccountManager {
             );
             await passwordInput.sendKeys(passWord);
             console.log(`✅ [initWebdriver] Password input set to: ${passWord}`);
-    
+
             // Waiting for element with attribute (class="success-circle") for maximum 15 seconds
             await webdriver.wait(
                 until.elementLocated(By.className("success-circle")),
@@ -280,7 +343,7 @@ class AccountManager {
             );
             await loginButton.click();
             console.log(`✅ [initWebdriver] Login button clicked.`);
-            
+
             await new Promise(resolve => setTimeout(resolve,10000));
         } catch (error) {
             console.error(`❌ [initWebdriver] Error during webdriver initialization: ${error.message}`);

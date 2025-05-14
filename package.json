@@ -4,7 +4,8 @@
   "description": "Auto connect wallet, x, and discord",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "install-python-deps": "pip install -r requirements.txt"
   },
   "author": "thai.lam",
   "license": "ISC",
@@ -16,6 +17,7 @@
     "fs": "^0.0.1-security",
     "inquirer": "^12.6.0",
     "mocha": "^11.2.2",
+    "node-window-manager": "^2.2.4",
     "path": "^0.12.7",
     "selenium-webdriver": "^4.32.0",
     "url": "^0.11.4"
