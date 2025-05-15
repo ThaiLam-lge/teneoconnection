@@ -13,6 +13,56 @@ import { windowManager } from 'node-window-manager';
 import { exec } from 'child_process';
 import { rejects } from 'assert';
 import { stderr, stdout } from 'process';
+import os from 'os';
+import { execSync } from 'child_process';
+
+screen.config.resourceDirectory = "./resources";
+screen.config.confidence = 0.8;
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const _openChromeCommand =  'chrome --profile-directory="Default" https://dashboard.teneo.pro/auth --new-window --start-maximized';
+const _windowScallingFactor = getWindowsScalingFactor();
+console.log(chalk.yellow(`Windows scaling factor: ${_windowScallingFactor}`));
+/**
+ * Get Windows display scaling factor (DPI scaling) as a float (e.g. 1.5 for 150%).
+ * Returns 1.0 if not on Windows or cannot detect.
+ */
+function getWindowsScalingFactor() {
+    if (os.platform() !== 'win32') return 1.0;
+    console.log(chalk.yellow('Getting Windows scaling factor...'));
+    try {
+        // Use PowerShell to get scaling (DPI) for primary monitor
+        const cmd = 'python.exe ./getDPR.py';
+        const output = execSync(cmd, { encoding: 'utf8' }).trim();
+        console.log(chalk.yellow(`PowerShell output: ${output}`));
+        const dpr = parseFloat(output);
+        return dpr;
+    } catch (e) {
+        // fallback
+    }
+    return 1.0;
+}
+
+//  Convert logical (OpenCV/pyautogui) coordinates to physical (nut-js) coordinates
+
+function logicalToPhysical(value) {
+    return Math.round(value / _windowScallingFactor);
+}
+
+async function waitForImage(imagePath, timeout = 10000, retryInterval = 200) {
+    while (timeout > 0) {
+        const pos = await findImagePosition(imagePath);
+
+        if (pos.found) {
+            console.log(chalk.green(`Found image at (x=${pos.x}, y=${pos.y}), with sizes (width=${pos.width}, height=${pos.height})`));
+            return pos;
+        }
+
+        await new Promise(resolve => setTimeout(resolve, retryInterval));
+        timeout -= retryInterval;
+    }
+    return { found: false, x: 0, y: 0, width: 0, height: 0 };
+}
 
 async function findImagePosition(imagePath) {
     const absolutePath = path.resolve(imagePath);
@@ -36,10 +86,10 @@ async function findImagePosition(imagePath) {
               const found = result[0] === 'y';
 
               if (found) {
-                const x = parseInt(result[1]);
-                const y = parseInt(result[2]);
-                const width = parseInt(result[3]);
-                const height = parseInt(result[4]);
+                const x = logicalToPhysical(parseInt(result[1]));
+                const y = logicalToPhysical(parseInt(result[2]));
+                const width = logicalToPhysical(parseInt(result[3]));
+                const height = logicalToPhysical(parseInt(result[4]));
 
                 resolve({ found, x, y, width, height });
               } else {
@@ -49,15 +99,12 @@ async function findImagePosition(imagePath) {
         });
 }
 
-screen.config.resourceDirectory = "./resources";
-screen.config.confidence = 0.8;
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-const _openChromeCommand =  'chrome --profile-directory="Default" https://dashboard.teneo.pro/auth --new-window --start-maximized'
-
 async function leftClick(location, offsetX=0, offsetY=0) {
     try{
+        console.log(chalk.green(`Left click at (x=${location.x}, y=${location.y}), with sizes (width=${location.width}, height=${location.height})`));
         await mouse.setPosition(new Point(location.x + offsetX, location.y + offsetY));
+        await new Promise(resolve => setTimeout(resolve,1000));
+
         await mouse.leftClick();
         await new Promise(resolve => setTimeout(resolve,100));
     } catch (error)
@@ -70,14 +117,12 @@ function moveWindowToTopLeft(titleKeyword) {
     const windows = windowManager.getWindows();
 
     for (const win of windows) {
-        const logFilePath = 'logs.txt'; // Đường dẫn file log
+        const windowTilte = win.getTitle().toLowerCase();
         
-        // Lấy tiêu đề và ghi log vào file
-        const logMessage = win.getTitle().toLowerCase();
-        console.log(logMessage);
-        
-        // Ghi log vào file
-        fs.appendFileSync(logFilePath, logMessage + '\n', 'utf8');
+        if (titleKeyword && windowTilte.includes(titleKeyword.toLowerCase())) {
+            win.setBounds({ x: 0, y: 0, width: 1920, height: 1080 });
+            console.log(chalk.green(`Window with title "${titleKeyword}" moved to top left.`));
+        }
     }
 }
 
@@ -265,11 +310,44 @@ class AccountManager {
         await new Promise(resolve => setTimeout(resolve, 3000));
         moveWindowToTopLeft("teneo dashboard");
 
-        await new Promise(resolve => setTimeout(resolve, 10000));
+        await new Promise(resolve => setTimeout(resolve, 7000));
+
+        // input username and password
+        // find the Login Image
+        const loginPosition = await findImagePosition('resources/Login.PNG');
+        if (loginPosition.found) {
+            console.log(`Find the login Position at (x=${loginPosition.x}, y=${loginPosition.y}), with sizes (width=${loginPosition.width}, height=${loginPosition.height})`);
+        } else {
+            console.log(`Can't find the login image. Please check the image.`);
+            return;
+        }
+        await leftClick(loginPosition);
+        await leftClick(loginPosition,loginPosition.height/2,loginPosition.width/2);
+        await leftClick(loginPosition,loginPosition.width/2,loginPosition.height/2);
+        await leftClick(loginPosition,loginPosition.width/2,loginPosition.height/2+logicalToPhysical(166));
+        await pressAndRelease(Key.LeftControl,Key.A);
+        clipboardy.writeSync(username);
+        await pressAndRelease(Key.LeftControl,Key.V);
+
+        await leftClick(loginPosition,loginPosition.width/2,loginPosition.height/2+logicalToPhysical(285));
+        await pressAndRelease(Key.LeftControl,Key.A);
+        clipboardy.writeSync(password);
+        await pressAndRelease(Key.LeftControl,Key.V);
+
+        const cloudfarePos = await waitForImage(`resources/CloudFlare.PNG`);
+        if (!cloudfarePos.found) {
+            console.log(chalk.red('❌ Cloudfare image not found!'));
+            return;
+        }
+        await leftClick(cloudfarePos,cloudfarePos.width/2,cloudfarePos.height/2+logicalToPhysical(121));
+
+        await new Promise(resolve => setTimeout(resolve, 5000));
+
         await pressAndRelease(Key.LeftControl,Key.LeftShift,Key.I);
-        const position = await findImagePosition('test_image.png');
+        await pressAndRelease(Key.LeftControl,Key.LeftShift,Key.Num0);
+        const position = await findImagePosition('resources/console.PNG');
         if (position.found) {
-            console.log(`Ảnh tìm thấy tại (x=${position.x}, y=${position.y}), với kích thước (width=${position.width}, height=${position.height})`);
+            console.log(`Find the console Position at (x=${position.x}, y=${position.y}), with sizes (width=${position.width}, height=${position.height})`);
         } else {
             console.log('Không tìm thấy ảnh.');
         }

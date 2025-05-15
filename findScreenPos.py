@@ -9,7 +9,6 @@ import cv2  # OpenCV for image processing
 import sys  # For command-line arguments
 import numpy as np  # For handling image arrays (if needed)
 import pyautogui
-from screeninfo import get_monitors
 
 def find_screen_position(image_path):
     try:
