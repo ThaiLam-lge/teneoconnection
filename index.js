@@ -8,7 +8,7 @@ import Chrome from 'selenium-webdriver/chrome.js'
 import { Browser, Builder, until, By } from 'selenium-webdriver';
 import { Key, keyboard , screen,  imageResource, mouse, Point } from '@nut-tree-fork/nut-js';
 import clipboardy from 'clipboardy';
-import { dir, error } from 'console';
+import { dir, error, time } from 'console';
 import { windowManager } from 'node-window-manager';
 import { exec } from 'child_process';
 import { rejects } from 'assert';
@@ -81,7 +81,7 @@ async function findImagePosition(imagePath) {
               const output = stdout.trim();
               console.log(`Result from Python: ${output}`);
 
-              // Phân tích kết quả trả về
+              // Read the result
               const result = output.split(';');
               const found = result[0] === 'y';
 
@@ -125,21 +125,18 @@ function moveWindowToTopLeft(titleKeyword) {
     }
 }
 
-async function findImagePos(image_path){
-    try {
-        const image = imageResource(image_path);
-        const pos = await screen.find(image);
-
-        // return center position
-        pos.left = pos.left + pos.width / 2;
-        pos.top = pos.top + pos.height / 2;
-        return pos;
-    } catch (error) {
-        console.log(chalk.red(`Error on findImagePos: ${error}`));
-        return null;
+async function closeWindow(titleKeyword) {
+    const windows = windowManager.getWindows();
+    for (const win of windows) {
+        const windowTitle = win.getTitle().toLowerCase();
+        if (titleKeyword && windowTitle.includes(titleKeyword.toLowerCase())) {
+            win.bringToTop();
+            await pressAndRelease(Key.LeftAlt,Key.F4);
+            console.log(chalk.green(`Window with title "${titleKeyword}" closed.`));
+        }
     }
-
 }
+
 
 async function pressAndRelease(...keys) {
     try {
@@ -300,8 +297,10 @@ class AccountManager {
     async getAccessToken(username,password){
         console.log(chalk.green(`Get access tocken for username = ${username}`));
         let token = null;
+        // close the "teneo dashboard" window
+        await closeWindow("teneo dashboard");
+
         // open Chrome by nut-js
-        await mouse.setPosition(new Point(0,0));
         await pressAndRelease(Key.LeftWin,Key.R);
         clipboardy.writeSync(_openChromeCommand);
         await pressAndRelease(Key.LeftControl,Key.V);
@@ -309,11 +308,11 @@ class AccountManager {
         await new Promise(resolve => setTimeout(resolve, 3000));
         moveWindowToTopLeft("teneo dashboard");
         await pressAndRelease(Key.LeftControl,Key.LeftShift,Key.Num0);
-        await new Promise(resolve => setTimeout(resolve, 7000));
+        // await new Promise(resolve => setTimeout(resolve, 7000));
 
         // input username and password
         // find the Login Image
-        const loginPosition = await findImagePosition('resources/Login.PNG');
+        const loginPosition = await waitForImage('resources/Login.PNG');
         if (loginPosition.found) {
             console.log(`Find the login Position at (x=${loginPosition.x}, y=${loginPosition.y}), with sizes (width=${loginPosition.width}, height=${loginPosition.height})`);
         } else {
@@ -330,23 +329,104 @@ class AccountManager {
         clipboardy.writeSync(password);
         await pressAndRelease(Key.LeftControl,Key.V);
 
-        const cloudfarePos = await waitForImage(`resources/CloudFlare.PNG`);
+        // wait for cloudfare image verification
+        const cloudfarePos = await waitForImage(`resources/CloudFlare.PNG`,10000);
         if (!cloudfarePos.found) {
             console.log(chalk.red('❌ Cloudfare image not found!'));
             return;
         }
+        // click on the Login button
         await leftClick(cloudfarePos,cloudfarePos.width/2,cloudfarePos.height/2+logicalToPhysical(121));
 
-        await new Promise(resolve => setTimeout(resolve, 5000));
-
-        await pressAndRelease(Key.LeftControl,Key.LeftShift,Key.I);
-        await pressAndRelease(Key.LeftControl,Key.LeftShift,Key.Num0);
-        const position = await findImagePosition('resources/console.PNG');
-        if (position.found) {
-            console.log(`Find the console Position at (x=${position.x}, y=${position.y}), with sizes (width=${position.width}, height=${position.height})`);
-        } else {
-            console.log('Không tìm thấy ảnh.');
+        // handle the google change password popup                  571,186
+        const googleChangePassPos = await waitForImage(`resources/ChangePassWordPopup.PNG`,2000);
+        if (googleChangePassPos.found) {
+            console.log(chalk.yellow('Google Change Password popup found!'));
+            await leftClick(googleChangePassPos,logicalToPhysical(571),logicalToPhysical(186));
         }
+
+        // wait for the reward image
+        const rewardPos = await waitForImage(`resources/Rewards.PNG`,15000);
+        if (!rewardPos.found) {
+            console.log(chalk.red('❌ Reward image not found!'));
+            return;
+        }
+        // click on the reward button
+        await leftClick(rewardPos,rewardPos.width/2,rewardPos.height/2);
+
+        // wait for the LinkWallet image
+        processConnect: {
+            const linkWalletPos = await waitForImage(`resources/LinkWallet.PNG`,2000);
+            if (!linkWalletPos.found) {
+                console.log(chalk.red('❌ LinkWallet image not found!'));
+                break processConnect;
+            }
+            // click on the LinkWallet button
+            await leftClick(linkWalletPos,linkWalletPos.width/2,linkWalletPos.height/2);
+
+            // wait for the Connect&Link image
+            const connectLinkPos = await waitForImage(`resources/Connect&Link.PNG`,5000);
+            if (!connectLinkPos.found) {
+                console.log(chalk.red('❌ Connect&Link image not found!'));
+                break processConnect;
+            }
+            // click on the Connect&Link button
+            await leftClick(connectLinkPos,connectLinkPos.width/2,connectLinkPos.height/2);
+    
+            // wait for the MetaMask window by 1s
+            await new Promise(resolve => setTimeout(resolve, 1000));
+            // focus metaMask window
+            moveWindowToTopLeft("MetaMask");
+    
+            // wait for the MetaMaskCancel button
+            const metaMaskCancelPos = await waitForImage(`resources/MetaMaskCancel.PNG`,15000);
+            if (!metaMaskCancelPos.found) {
+                console.log(chalk.red('❌ MetaMaskCancel image not found!'));
+                pressAndRelease(Key.Escape);
+                break processConnect;
+            }
+            // click on the MetaMaskCancel button
+            await leftClick(metaMaskCancelPos,metaMaskCancelPos.width/2,metaMaskCancelPos.height/2);
+    
+            // focus on the Teneo window
+            moveWindowToTopLeft("teneo dashboard");
+    
+            // wait for the TeneoLinkCancel image
+            const teneoLinkCancelPos = await waitForImage(`resources/TeneoLinkCancel.PNG`,15000);
+            if (!teneoLinkCancelPos.found) {
+                console.log(chalk.red('❌ TeneoLinkCancel image not found!'));
+                return;
+            }
+            // click on the TeneoLinkCancel button
+            await leftClick(teneoLinkCancelPos,teneoLinkCancelPos.width/2,teneoLinkCancelPos.height/2);
+        }
+
+        // wait for the Logout image
+        const logoutPos = await waitForImage(`resources/Logout.PNG`,15000);
+        if (!logoutPos.found) {
+            console.log(chalk.red('❌ Logout image not found!'));
+            return;
+        }
+        // click on the Logout button
+        await leftClick(logoutPos,logoutPos.width/2,logoutPos.height/2);
+        // press Tabx2  and Enter
+        await pressAndRelease(Key.Tab);
+        await pressAndRelease(Key.Tab);
+        await pressAndRelease(Key.Enter);
+        // close the "teneo dashboard" window
+        await closeWindow("teneo dashboard");  
+
+
+        // await new Promise(resolve => setTimeout(resolve, 5000));
+
+        // await pressAndRelease(Key.LeftControl,Key.LeftShift,Key.I);
+        // await pressAndRelease(Key.LeftControl,Key.LeftShift,Key.Num0);
+        // const position = await findImagePosition('resources/console.PNG');
+        // if (position.found) {
+        //     console.log(`Find the console Position at (x=${position.x}, y=${position.y}), with sizes (width=${position.width}, height=${position.height})`);
+        // } else {
+        //     console.log(chalk.red('❌ console.PNG image not found!'));
+        // }
         // await new Promise(resolve => setTimeout(resolve, 100));
         // let consolePos = await findImagePos("console.PNG");
         // if(consolePos!==null) {
