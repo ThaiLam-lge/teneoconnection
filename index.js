@@ -103,8 +103,6 @@ async function leftClick(location, offsetX=0, offsetY=0) {
     try{
         console.log(chalk.green(`Left click at (x=${location.x}, y=${location.y}), with sizes (width=${location.width}, height=${location.height})`));
         await mouse.setPosition(new Point(location.x + offsetX, location.y + offsetY));
-        await new Promise(resolve => setTimeout(resolve,1000));
-
         await mouse.leftClick();
         await new Promise(resolve => setTimeout(resolve,100));
     } catch (error)
@@ -121,6 +119,7 @@ function moveWindowToTopLeft(titleKeyword) {
         
         if (titleKeyword && windowTilte.includes(titleKeyword.toLowerCase())) {
             win.setBounds({ x: 0, y: 0, width: 1920, height: 1080 });
+            win.maximize();
             console.log(chalk.green(`Window with title "${titleKeyword}" moved to top left.`));
         }
     }
@@ -309,7 +308,7 @@ class AccountManager {
         await pressAndRelease(Key.Enter);
         await new Promise(resolve => setTimeout(resolve, 3000));
         moveWindowToTopLeft("teneo dashboard");
-
+        await pressAndRelease(Key.LeftControl,Key.LeftShift,Key.Num0);
         await new Promise(resolve => setTimeout(resolve, 7000));
 
         // input username and password
@@ -321,15 +320,12 @@ class AccountManager {
             console.log(`Can't find the login image. Please check the image.`);
             return;
         }
-        await leftClick(loginPosition);
-        await leftClick(loginPosition,loginPosition.height/2,loginPosition.width/2);
-        await leftClick(loginPosition,loginPosition.width/2,loginPosition.height/2);
         await leftClick(loginPosition,loginPosition.width/2,loginPosition.height/2+logicalToPhysical(166));
         await pressAndRelease(Key.LeftControl,Key.A);
         clipboardy.writeSync(username);
         await pressAndRelease(Key.LeftControl,Key.V);
 
-        await leftClick(loginPosition,loginPosition.width/2,loginPosition.height/2+logicalToPhysical(285));
+        await leftClick(loginPosition,loginPosition.width/2-logicalToPhysical(242),loginPosition.height/2+logicalToPhysical(285));
         await pressAndRelease(Key.LeftControl,Key.A);
         clipboardy.writeSync(password);
         await pressAndRelease(Key.LeftControl,Key.V);
