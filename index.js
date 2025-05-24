@@ -20,9 +20,47 @@ screen.config.resourceDirectory = "./resources";
 screen.config.confidence = 0.8;
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const _openChromeCommand =  'chrome --profile-directory="Default" https://dashboard.teneo.pro/auth --new-window --start-maximized';
+const _tempProfileName = "TempProfile";
+const _openChromeCommand =  `chrome --profile-directory="${_tempProfileName}" https://dashboard.teneo.pro/auth --new-window --start-maximized`;
+const _getAccessTokenScript = `copy(localStorage.getItem('auth'));`
 const _windowScallingFactor = getWindowsScalingFactor();
 console.log(chalk.yellow(`Windows scaling factor: ${_windowScallingFactor}`));
+
+
+// waiting for a clipboard with timeout
+async function waitClipboard(text, timeout = 10000,inteval = 1000) {   
+    if (!text) {
+        console.log(chalk.red(`❌ No text provided to wait for in clipboard`));
+        return null;
+    } 
+
+    let startTime = Date.now();
+    let clipboardText = clipboardy.readSync();
+    while (Date.now() - startTime < timeout) {
+        if (clipboardText.includes(text)) {
+            console.log(chalk.green(`Found text in clipboard: ${clipboardText}`));
+            return clipboardText;
+        }
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        clipboardText = clipboardy.readSync();
+    }
+    console.log(chalk.red(`Timeout waiting for text in clipboard`));
+    return null;
+}
+
+// clear the chrome profile by command
+// delete folder %LocalAppData%\Google\Chrome\User Data\<profileName>
+async function clearChromeProfile(profileName) {
+    const profilePath = path.join(process.env.LOCALAPPDATA, 'Google', 'Chrome', 'User Data', profileName);
+    console.log(chalk.yellow(`Clearing Chrome profile: ${profilePath}`));
+    try {
+        await fs.promises.rm(profilePath, { recursive: true, force: true });
+        console.log(chalk.green(`✅ Cleared Chrome profile: ${profilePath}`));
+    } catch (error) {
+        console.error(chalk.red(`❌ Error clearing Chrome profile: ${error.message}`));
+    }
+}
+
 /**
  * Get Windows display scaling factor (DPI scaling) as a float (e.g. 1.5 for 150%).
  * Returns 1.0 if not on Windows or cannot detect.
@@ -104,7 +142,7 @@ async function leftClick(location, offsetX=0, offsetY=0) {
         console.log(chalk.green(`Left click at (x=${location.x}, y=${location.y}), with sizes (width=${location.width}, height=${location.height})`));
         await mouse.setPosition(new Point(location.x + offsetX, location.y + offsetY));
         await mouse.leftClick();
-        await new Promise(resolve => setTimeout(resolve,100));
+        await new Promise(resolve => setTimeout(resolve,10));
     } catch (error)
     {
         console.log(chalk.red(`Error on leftClick: ${error}`));
@@ -126,11 +164,13 @@ function moveWindowToTopLeft(titleKeyword) {
 }
 
 async function closeWindow(titleKeyword) {
+    console.log(chalk.yellow(`Closing all windows include title "${titleKeyword}"...`));
     const windows = windowManager.getWindows();
     for (const win of windows) {
         const windowTitle = win.getTitle().toLowerCase();
         if (titleKeyword && windowTitle.includes(titleKeyword.toLowerCase())) {
             win.bringToTop();
+            console.log(chalk.yellow(`Closing window with title "${windowTitle}"...`));
             await pressAndRelease(Key.LeftAlt,Key.F4);
             console.log(chalk.green(`Window with title "${titleKeyword}" closed.`));
         }
@@ -149,7 +189,7 @@ async function pressAndRelease(...keys) {
         }
 
         console.log(`Pressed and released keys: ${keys.join(", ")}`);
-        await new Promise(resolve => setTimeout(resolve,100));
+        await new Promise(resolve => setTimeout(resolve,10));
 
     } catch (error) {
         console.error("Error pressing and releasing keys:", error);
@@ -294,151 +334,122 @@ class AccountManager {
 
     }
 
-    async getAccessToken(username,password){
-        console.log(chalk.green(`Get access tocken for username = ${username}`));
-        let token = null;
-        // close the "teneo dashboard" window
-        await closeWindow("teneo dashboard");
-
+    async loginTeneo(username,password){
+        console.log(chalk.green(`Login to Teneo with username = ${username}`));
+        
         // open Chrome by nut-js
+        console.log(chalk.yellow('Opening Chrome...'));
         await pressAndRelease(Key.LeftWin,Key.R);
         clipboardy.writeSync(_openChromeCommand);
         await pressAndRelease(Key.LeftControl,Key.V);
         await pressAndRelease(Key.Enter);
+        console.log(chalk.yellow('Waiting for Chrome to open...'));
         await new Promise(resolve => setTimeout(resolve, 3000));
+        console.log(chalk.yellow('Chrome opened. -> Move to top left and maximize'));
         moveWindowToTopLeft("teneo dashboard");
         await pressAndRelease(Key.LeftControl,Key.LeftShift,Key.Num0);
-        // await new Promise(resolve => setTimeout(resolve, 7000));
 
         // input username and password
         // find the Login Image
+        console.log(chalk.yellow('Waiting for login image...'));
         const loginPosition = await waitForImage('resources/Login.PNG');
         if (loginPosition.found) {
             console.log(`Find the login Position at (x=${loginPosition.x}, y=${loginPosition.y}), with sizes (width=${loginPosition.width}, height=${loginPosition.height})`);
         } else {
             console.log(`Can't find the login image. Please check the image.`);
-            return;
+            throw new Error('Login image not found');
         }
+        console.log(chalk.yellow('Input username...'));
         await leftClick(loginPosition,loginPosition.width/2,loginPosition.height/2+logicalToPhysical(166));
         await pressAndRelease(Key.LeftControl,Key.A);
         clipboardy.writeSync(username);
         await pressAndRelease(Key.LeftControl,Key.V);
 
+        console.log(chalk.yellow('Input password...'));
         await leftClick(loginPosition,loginPosition.width/2-logicalToPhysical(242),loginPosition.height/2+logicalToPhysical(285));
         await pressAndRelease(Key.LeftControl,Key.A);
         clipboardy.writeSync(password);
         await pressAndRelease(Key.LeftControl,Key.V);
 
         // wait for cloudfare image verification
+        console.log(chalk.yellow('Waiting for Cloudfare image...'));
         const cloudfarePos = await waitForImage(`resources/CloudFlare.PNG`,10000);
         if (!cloudfarePos.found) {
             console.log(chalk.red('❌ Cloudfare image not found!'));
             return;
         }
+
         // click on the Login button
+        console.log(chalk.yellow('Clicking on Login button...'));
         await leftClick(cloudfarePos,cloudfarePos.width/2,cloudfarePos.height/2+logicalToPhysical(121));
 
-        // handle the google change password popup                  571,186
+        
+        // handle the google change password popup
+        console.log(chalk.yellow('Check for Google Change Password popup...'));
         const googleChangePassPos = await waitForImage(`resources/ChangePassWordPopup.PNG`,2000);
         if (googleChangePassPos.found) {
             console.log(chalk.yellow('Google Change Password popup found!'));
             await leftClick(googleChangePassPos,logicalToPhysical(571),logicalToPhysical(186));
         }
 
-        // wait for the reward image
+        // verify if the login is successful
         const rewardPos = await waitForImage(`resources/Rewards.PNG`,15000);
         if (!rewardPos.found) {
             console.log(chalk.red('❌ Reward image not found!'));
-            return;
+            throw new Error('Login failed');
         }
-        // click on the reward button
-        await leftClick(rewardPos,rewardPos.width/2,rewardPos.height/2);
-
-        // wait for the LinkWallet image
-        processConnect: {
-            const linkWalletPos = await waitForImage(`resources/LinkWallet.PNG`,2000);
-            if (!linkWalletPos.found) {
-                console.log(chalk.red('❌ LinkWallet image not found!'));
-                break processConnect;
-            }
-            // click on the LinkWallet button
-            await leftClick(linkWalletPos,linkWalletPos.width/2,linkWalletPos.height/2);
-
-            // wait for the Connect&Link image
-            const connectLinkPos = await waitForImage(`resources/Connect&Link.PNG`,5000);
-            if (!connectLinkPos.found) {
-                console.log(chalk.red('❌ Connect&Link image not found!'));
-                break processConnect;
-            }
-            // click on the Connect&Link button
-            await leftClick(connectLinkPos,connectLinkPos.width/2,connectLinkPos.height/2);
+    }
     
-            // wait for the MetaMask window by 1s
-            await new Promise(resolve => setTimeout(resolve, 1000));
-            // focus metaMask window
-            moveWindowToTopLeft("MetaMask");
-    
-            // wait for the MetaMaskCancel button
-            const metaMaskCancelPos = await waitForImage(`resources/MetaMaskCancel.PNG`,15000);
-            if (!metaMaskCancelPos.found) {
-                console.log(chalk.red('❌ MetaMaskCancel image not found!'));
-                pressAndRelease(Key.Escape);
-                break processConnect;
-            }
-            // click on the MetaMaskCancel button
-            await leftClick(metaMaskCancelPos,metaMaskCancelPos.width/2,metaMaskCancelPos.height/2);
-    
-            // focus on the Teneo window
-            moveWindowToTopLeft("teneo dashboard");
-    
-            // wait for the TeneoLinkCancel image
-            const teneoLinkCancelPos = await waitForImage(`resources/TeneoLinkCancel.PNG`,15000);
-            if (!teneoLinkCancelPos.found) {
-                console.log(chalk.red('❌ TeneoLinkCancel image not found!'));
-                return;
-            }
-            // click on the TeneoLinkCancel button
-            await leftClick(teneoLinkCancelPos,teneoLinkCancelPos.width/2,teneoLinkCancelPos.height/2);
-        }
-
-        // wait for the Logout image
-        const logoutPos = await waitForImage(`resources/Logout.PNG`,15000);
-        if (!logoutPos.found) {
-            console.log(chalk.red('❌ Logout image not found!'));
-            return;
-        }
-        // click on the Logout button
-        await leftClick(logoutPos,logoutPos.width/2,logoutPos.height/2);
-        // press Tabx2  and Enter
-        await pressAndRelease(Key.Tab);
-        await pressAndRelease(Key.Tab);
-        await pressAndRelease(Key.Enter);
+    async getAccessToken(username,password){
         // close the "teneo dashboard" window
-        await closeWindow("teneo dashboard");  
+        await closeWindow("teneo dashboard");
+        let token = null;
+        console.log(chalk.green(`Get access tocken for username = ${username}`));
+        console.log(chalk.yellow(`Clear Chrome profile...`));
+        await clearChromeProfile(_tempProfileName);
 
+        try {
+            await this.loginTeneo(username,password);
+        } catch (error) {
+            console.error(chalk.red(`❌ Error during login: ${error.message}`));
+            return token;
+        } 
+        console.log(chalk.green('Successfully logged in!'));
 
-        // await new Promise(resolve => setTimeout(resolve, 5000));
+        console.log(chalk.yellow('Running script to get access token...'));
+        try {
+            console.log(chalk.yellow('Opening Chrome console...'));
+            await pressAndRelease(Key.LeftControl,Key.LeftShift,Key.J);
+            clipboardy.writeSync(_getAccessTokenScript);
+            await pressAndRelease(Key.LeftControl,Key.V);
+            clipboardy.writeSync("");
+            await pressAndRelease(Key.Enter);
+            await new Promise(resolve => setTimeout(resolve, 1000));
+            // console.log(chalk.yellow('Focusing on Console tab...'));
+            console.log(chalk.yellow('typing allow pasting script...'));
+            await keyboard.type('allow pasting');
+            await pressAndRelease(Key.Enter);
 
-        // await pressAndRelease(Key.LeftControl,Key.LeftShift,Key.I);
-        // await pressAndRelease(Key.LeftControl,Key.LeftShift,Key.Num0);
-        // const position = await findImagePosition('resources/console.PNG');
-        // if (position.found) {
-        //     console.log(`Find the console Position at (x=${position.x}, y=${position.y}), with sizes (width=${position.width}, height=${position.height})`);
-        // } else {
-        //     console.log(chalk.red('❌ console.PNG image not found!'));
-        // }
-        // await new Promise(resolve => setTimeout(resolve, 100));
-        // let consolePos = await findImagePos("console.PNG");
-        // if(consolePos!==null) {
-        //     await leftClick(consolePos);
-        //     await leftClick(consolePos,150,150);
-        // }
-        // await keyboard.type(`allow pasting`);
-        // await pressAndRelease(Key.Enter);
-        // clipboardy.writeSync(genLoginScript(username,password));
-        // await pressAndRelease()
-        // await pressAndRelease(Key.LeftControl,Key.V);
-        // await pressAndRelease(Key.Enter);
+            console.log(chalk.yellow('Pasting script...'));
+            clipboardy.writeSync(_getAccessTokenScript);
+            await pressAndRelease(Key.LeftControl,Key.V);
+            clipboardy.writeSync("");
+            await pressAndRelease(Key.Enter);
+            console.log(chalk.yellow('Running script...'));
+
+            console.log(chalk.yellow('Waiting for access token...'));
+            token = await waitClipboard("accessToken",10000);
+            if (token) {
+                console.log(chalk.green(`✅ Access token: ${token}`));
+            } else {
+                console.log(chalk.red('❌ Failed to get access token!'));
+            }
+        } catch (error) {
+            console.error(chalk.red(`❌ Error during script generation: ${error.message}`));
+            return token;
+        }
+        return token;
+
     }
     async processWithSelenium(userName,passWord){
         const webdriver = await this.initWebdriver(userName,passWord);
