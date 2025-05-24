@@ -8,7 +8,7 @@ import Chrome from 'selenium-webdriver/chrome.js'
 import { Browser, Builder, until, By } from 'selenium-webdriver';
 import { Key, keyboard , screen,  imageResource, mouse, Point } from '@nut-tree-fork/nut-js';
 import clipboardy from 'clipboardy';
-import { dir, error, time } from 'console';
+import { dir, error, log, time } from 'console';
 import { windowManager } from 'node-window-manager';
 import { exec } from 'child_process';
 import { rejects } from 'assert';
@@ -26,7 +26,24 @@ const _getAccessTokenScript = `copy(localStorage.getItem('auth'));`
 const _windowScallingFactor = getWindowsScalingFactor();
 console.log(chalk.yellow(`Windows scaling factor: ${_windowScallingFactor}`));
 
-
+// click button contain text
+async function clickButtonContainText(webdriver, text){
+    if (!webdriver || !text) {
+        console.log(chalk.red(`❌ No webdriver or text provided to click button`));
+        return false;
+    }
+    console.log(chalk.yellow(`Waiting for button contain text "${text}"...`));
+    const button = await webdriver.wait(until.elementLocated(By.xpath(`//button[contains(text(), '${text}')]`)), 10000);
+    if (button) {
+        console.log(chalk.green(`Found button with text "${text}"`));
+        await button.click();
+        console.log(chalk.green(`Clicked button with text "${text}"`));
+        return true;
+    } else {
+        console.log(chalk.red(`Button with text "${text}" not found!`));
+        return false;
+    }
+}
 // waiting for a clipboard with timeout
 async function waitClipboard(text, timeout = 10000,inteval = 1000) {   
     if (!text) {
@@ -139,7 +156,7 @@ async function findImagePosition(imagePath) {
 
 async function leftClick(location, offsetX=0, offsetY=0) {
     try{
-        console.log(chalk.green(`Left click at (x=${location.x}, y=${location.y}), with sizes (width=${location.width}, height=${location.height})`));
+        console.log(chalk.green(`Left click at (x=${location.x}, y=${location.y}), with offet (offsetX=${offsetX}, offsetY=${offsetY})`));
         await mouse.setPosition(new Point(location.x + offsetX, location.y + offsetY));
         await mouse.leftClick();
         await new Promise(resolve => setTimeout(resolve,10));
@@ -151,7 +168,7 @@ async function leftClick(location, offsetX=0, offsetY=0) {
 
 function moveWindowToTopLeft(titleKeyword) {
     const windows = windowManager.getWindows();
-
+    log(chalk.yellow(`Moving windows with title containing "${titleKeyword}" to top left...`));
     for (const win of windows) {
         const windowTilte = win.getTitle().toLowerCase();
         
@@ -327,8 +344,11 @@ class AccountManager {
         // loop for all account
         for(const [userName,passWord] of this.accounts) {
             console.log(`Username: ${userName}, Pass: ${passWord}`);
-            // await this.processWithSelenium(userName,passWord);
-            await this.getAccessToken(userName,passWord);
+            const userToken =await this.getAccessToken(userName,passWord);
+            if (!userToken) {
+                continue;
+            }
+            await this.processWithSelenium(userToken);
         };
 
 
@@ -344,7 +364,7 @@ class AccountManager {
         await pressAndRelease(Key.LeftControl,Key.V);
         await pressAndRelease(Key.Enter);
         console.log(chalk.yellow('Waiting for Chrome to open...'));
-        await new Promise(resolve => setTimeout(resolve, 3000));
+        await new Promise(resolve => setTimeout(resolve, 4000));
         console.log(chalk.yellow('Chrome opened. -> Move to top left and maximize'));
         moveWindowToTopLeft("teneo dashboard");
         await pressAndRelease(Key.LeftControl,Key.LeftShift,Key.Num0);
@@ -451,9 +471,9 @@ class AccountManager {
         return token;
 
     }
-    async processWithSelenium(userName,passWord){
-        const webdriver = await this.initWebdriver(userName,passWord);
-        this.linkWallet(webdriver);
+    async processWithSelenium(token){
+        const webdriver = await this.initWebdriver(token);
+        await this.linkWallet(webdriver);
         this.linkwithX(webdriver);
         this.connect2Discord(webdriver);
         this.joinProjectTelegram(webdriver);
@@ -470,57 +490,35 @@ class AccountManager {
     }
 
 
-    async initWebdriver(userName,passWord) {
-        console.log(`🔍 [initWebdriver] Initializing webdriver with username: ${userName}`);
-        // Simulate webdriver initialization
-        try {
-            const options = new Chrome.Options();
-            const webdriver = new Builder().forBrowser(Browser.CHROME).setChromeOptions(options).build();
+    async initWebdriver(token) {
+        console.log(`🔍 [initWebdriver] Initializing webdriver with token: ${token}`);
 
-            await webdriver.get('https://dashboard.teneo.pro/dashboard');
+        const options = new Chrome.Options();
+        console.log(`🔍 [initWebdriver] adding MetaMask extention`);
+        options.addExtensions(fs.readFileSync(path.join(__dirname, 'metamask.crx')));
+        const webdriver = new Builder().forBrowser(Browser.CHROME).setChromeOptions(options).build();
+        console.log(`🔍 [initWebdriver] Setting up Chrome options...`);
+        await webdriver.get('https://dashboard.teneo.pro/dashboard');
+        await webdriver.executeScript(`
+            localStorage.setItem('auth', '${token}');
+        `);
 
-            // Waiting for input with attribute (name="email") and set value = userName
-            const emailInput = await webdriver.wait(
-                until.elementLocated(By.name("email")),
-                15000 // Wait for a maximum of 15 seconds
-            );
-            await emailInput.sendKeys(userName);
-            console.log(`✅ [initWebdriver] Email input set to: ${userName}`);
+        console.log(`🔍 [initWebdriver] Navigating to Teneo dashboard...`);
+        await webdriver.get('https://dashboard.teneo.pro/dashboard');
 
-            // Waiting for input with attribute (name="password") and set value = passWord
-            const passwordInput = await webdriver.wait(
-                until.elementLocated(By.name("password")),
-                15000 // Wait for a maximum of 15 seconds
-            );
-            await passwordInput.sendKeys(passWord);
-            console.log(`✅ [initWebdriver] Password input set to: ${passWord}`);
-
-            // Waiting for element with attribute (class="success-circle") for maximum 15 seconds
-            await webdriver.wait(
-                until.elementLocated(By.className("success-circle")),
-                15000 // Wait for a maximum of 15 seconds
-            );
-            console.log(`✅ [initWebdriver] Success circle element found.`);
-
-            const loginButton = await webdriver.wait(
-                until.elementLocated(By.xpath("//button[text()='Login']")),
-                15000 // Wait for a maximum of 15 seconds
-            );
-            await loginButton.click();
-            console.log(`✅ [initWebdriver] Login button clicked.`);
-
-            await new Promise(resolve => setTimeout(resolve,10000));
-        } catch (error) {
-            console.error(`❌ [initWebdriver] Error during webdriver initialization: ${error.message}`);
-            throw error;
-        }
+        await new Promise(resolve => setTimeout(resolve,10000));
         return webdriver;
     }
 
-    linkWallet(webdriver) {
+    async linkWallet(webdriver) {
         console.log(`🔍 [linkWallet] Linking with smart wallet using webdriver: ${JSON.stringify(webdriver)}`);
+        console.log(chalk.yellow(`go to https://dashboard.teneo.pro/rewards`));
+        await webdriver.get('https://dashboard.teneo.pro/rewards');
+        await clickButtonContainText(webdriver, 'Link Wallet now');
+        await clickButtonContainText(webdriver, 'Connect & Link');
         // Simulate linking with X logic
         console.log(`✅ [linkWallet] Linked with smart wallet successfully.`);
+        await new Promise(resolve => setTimeout(resolve, 20000));
     }
 
     linkwithX(webdriver) {
